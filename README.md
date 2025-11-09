@@ -218,19 +218,19 @@ for cls in classes:
     labels.append(batch_lbls.numpy())
 
 
-feats = np.vstack(feats)
-labels = np.vstack(labels)
-y_idx = labels.argmax(1)
-train_list = tf.keras.utils.image_dataset_from_directory(
+    feats = np.vstack(feats)
+    labels = np.vstack(labels)
+    y_idx = labels.argmax(1)
+    train_list = tf.keras.utils.image_dataset_from_directory(
     data_dir, image_size=img_size, batch_size=1,
     validation_split=val_split, subset='training', seed=seed, label_mode='categorical'
-)
+    )
 
-file_paths = []
-for img, lab in train_list.unbatch().take(len(df_meta)):  # will end at training subset size
+    file_paths = []
+    for img, lab in train_list.unbatch().take(len(df_meta)):  # will end at training subset size
     break
-train_files = []
-for c in classes:
+    train_files = []
+    for c in classes:
     all_files = sorted([os.path.join(data_dir, c, f) for f in os.listdir(os.path.join(data_dir, c)) if is_image(os.path.join(data_dir, c, f))])
     # split deterministically like Keras does: we’ll mimic by proportion
     n = len(all_files)
@@ -239,78 +239,78 @@ for c in classes:
     random.Random(seed).shuffle(all_files)
     train_files += all_files[:train_n]
 
-paths = train_files[:feats.shape[0]]  # align lengths defensively
+    paths = train_files[:feats.shape[0]]  # align lengths defensively
 
-df_feats = pd.DataFrame({"path": paths, "y": y_idx})
-df_feats["cls"] = df_feats["y"].map(idx_to_class)
+    df_feats = pd.DataFrame({"path": paths, "y": y_idx})
+    df_feats["cls"] = df_feats["y"].map(idx_to_class)
 
-centroids = {}
-for cidx in range(num_classes):
+    centroids = {}
+    for cidx in range(num_classes):
     m = (y_idx == cidx)
     if m.sum() == 0: continue
     centroids[cidx] = feats[m].mean(axis=0)
 
-dists = np.zeros(len(df_feats), dtype=np.float32)
-for i,(p,y) in enumerate(zip(paths, y_idx)):
+    dists = np.zeros(len(df_feats), dtype=np.float32)
+    for i,(p,y) in enumerate(zip(paths, y_idx)):
     if y in centroids:
         dists[i] = np.linalg.norm(feats[i] - centroids[y])
-df_feats["dist"] = dists
+    df_feats["dist"] = dists
 
-K = 10  # change per your dataset size
-rows = []
-for cidx in range(num_classes):
+    K = 10  # change per your dataset size
+    rows = []
+    for cidx in range(num_classes):
     sub = df_feats[df_feats["y"]==cidx].sort_values("dist", ascending=False).head(K)
     rows.append(sub)
-df_outliers = pd.concat(rows) if rows else pd.DataFrame(columns=df_feats.columns)
-df_outliers.to_csv("report_visual_outliers_topK.csv", index=False)
-print("Saved visual outliers -> report_visual_outliers_topK.csv")
-inputs = Input(shape=img_size+(3,))
-x = data_augmentation(inputs)
-x = preprocess_layer(x)
+    df_outliers = pd.concat(rows) if rows else pd.DataFrame(columns=df_feats.columns)
+    df_outliers.to_csv("report_visual_outliers_topK.csv", index=False)
+    print("Saved visual outliers -> report_visual_outliers_topK.csv")
+    inputs = Input(shape=img_size+(3,))
+    x = data_augmentation(inputs)
+    x = preprocess_layer(x)
 
-base = MobileNetV2(include_top=False, weights="imagenet")
-base.trainable = False
+    base = MobileNetV2(include_top=False, weights="imagenet")
+    base.trainable = False
 
-x = base(x, training=False)
-x = GlobalAveragePooling2D()(x)
-x = Dropout(0.3)(x)
-x = Dense(256, activation="relu")(x)
-x = Dropout(0.3)(x)
-outputs = Dense(num_classes, activation="softmax")(x)
+    x = base(x, training=False)
+    x = GlobalAveragePooling2D()(x)
+    x = Dropout(0.3)(x)
+    x = Dense(256, activation="relu")(x)
+    x = Dropout(0.3)(x)
+    outputs = Dense(num_classes, activation="softmax")(x)
 
-model = Model(inputs, outputs)
-model.compile(optimizer=Adam(1e-3), loss="categorical_crossentropy", metrics=["accuracy"])
-model.summary()
+    model = Model(inputs, outputs)
+    model.compile(optimizer=Adam(1e-3), loss="categorical_crossentropy", metrics=["accuracy"])
+    model.summary()
 
-callbacks = [
+    callbacks = [
     tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=5, mode="max", restore_best_weights=True),
     tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=2, min_lr=1e-6),
     tf.keras.callbacks.ModelCheckpoint("checkpoints_best.h5", monitor="val_accuracy", save_best_only=True, mode="max"),
     tf.keras.callbacks.CSVLogger("training_log.csv", append=False)
-]
+    ]
 
-history = model.fit(ds_train, validation_data=ds_val, epochs=10, callbacks=callbacks)
-# Collect predictions
-y_true = []
-y_pred = []
-y_prob = []
+    history = model.fit(ds_train, validation_data=ds_val, epochs=10, callbacks=callbacks)
 
-for imgs, labs in ds_val.unbatch().batch(64):
+    y_true = []
+    y_pred = []
+    y_prob = []
+
+    for imgs, labs in ds_val.unbatch().batch(64):
     probs = model.predict(imgs, verbose=0)
     y_prob += list(probs)
     y_pred += list(np.argmax(probs, axis=1))
     y_true += list(np.argmax(labs.numpy(), axis=1))
 
-y_true = np.array(y_true); y_pred = np.array(y_pred); y_prob = np.array(y_prob)
-print("Validation accuracy:", (y_true==y_pred).mean())
+    y_true = np.array(y_true); y_pred = np.array(y_pred); y_prob = np.array(y_prob)
+    print("Validation accuracy:", (y_true==y_pred).mean())
 
-rep = classification_report(y_true, y_pred, target_names=classes, digits=4, output_dict=True)
-pd.DataFrame(rep).transpose().to_csv("report_classification.csv")
-print("Saved report_classification.csv")
+    rep = classification_report(y_true, y_pred, target_names=classes, digits=4, output_dict=True)
+    pd.DataFrame(rep).transpose().to_csv("report_classification.csv")
+    print("Saved report_classification.csv")
 
-cm = confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))
-pd.DataFrame(cm, index=classes, columns=classes).to_csv("report_confusion_matrix.csv")
-print("Saved report_confusion_matrix.csv")
+    cm = confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))
+    pd.DataFrame(cm, index=classes, columns=classes).to_csv("report_confusion_matrix.csv")
+    print("Saved report_confusion_matrix.csv")
 
 plt.figure(figsize=(min(12, 0.6*num_classes), min(12, 0.6*num_classes)))
 plt.imshow(cm, interpolation='nearest')
@@ -323,7 +323,7 @@ paths_all = []
 labels_all = []
 
  val_files = []
-for c in classes:
+    for c in classes:
     all_files = sorted([os.path.join(data_dir, c, f) for f in os.listdir(os.path.join(data_dir, c)) if pathlib.Path(f).suffix.lower() in {".jpg",".jpeg",".png",".bmp",".webp",".tif",".tiff"}])
     n = len(all_files)
     val_n = int(round(n*val_split))
