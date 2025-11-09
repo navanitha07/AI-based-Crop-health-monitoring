@@ -117,20 +117,22 @@ odd_ratio = []
 MIN_SIDE = 64       # too small threshold
 MIN_RATIO = 0.3     # extreme aspect ratio thresholds
 MAX_RATIO = 3.3
-
 for cls in classes:
+
     folder = os.path.join(data_dir, cls)
     for fn in os.listdir(folder):
         fp = os.path.join(folder, fn)
         if not is_image(fp):
             bad_files.append((fp, "non-image-ext"))
             continue
+        
         try:
             with Image.open(fp) as im:
                 im.verify()   # quick integrity check
             # reopen to read size (verify closes file)
             im = Image.open(fp)
             w, h = im.size
+        
         except Exception as e:
             bad_files.append((fp, f"corrupt: {e}"))
             continue
@@ -144,28 +146,28 @@ for cls in classes:
 
         records.append({"path": fp, "cls": cls, "w": w, "h": h, "ratio": ratio})
 
-df_meta = pd.DataFrame(records)
-print(f"Scanned {len(df_meta)} images.")
-print(f"Non-image/Corrupt files: {len(bad_files)} | Tiny: {len(tiny_files)} | Odd ratio: {len(odd_ratio)}")
+      df_meta = pd.DataFrame(records)
+    print(f"Scanned {len(df_meta)} images.")
+    print(f"Non-image/Corrupt files: {len(bad_files)} | Tiny: {len(tiny_files)} | Odd ratio: {len(odd_ratio)}")
 
-pd.DataFrame(bad_files, columns=["path","reason"]).to_csv("report_bad_files.csv", index=False)
-pd.DataFrame(tiny_files, columns=["path","size"]).to_csv("report_tiny_files.csv", index=False)
-pd.DataFrame(odd_ratio, columns=["path","size"]).to_csv("report_odd_ratio.csv", index=False)
+     pd.DataFrame(bad_files, columns=["path","reason"]).to_csv("report_bad_files.csv", index=False)
+    pd.DataFrame(tiny_files, columns=["path","size"]).to_csv("report_tiny_files.csv", index=False)
+    pd.DataFrame(odd_ratio, columns=["path","size"]).to_csv("report_odd_ratio.csv", index=False)
 
-cnt = df_meta['cls'].value_counts().sort_index()
-print("\nPer-class counts:\n", cnt)
-cnt.to_csv("report_class_counts.csv")
-os.makedirs("_quarantine", exist_ok=True)
-def move_list(lst, tag):
+    cnt = df_meta['cls'].value_counts().sort_index()
+    print("\nPer-class counts:\n", cnt)
+    cnt.to_csv("report_class_counts.csv")
+    os.makedirs("_quarantine", exist_ok=True)
+    def move_list(lst, tag):
     for p,_ in lst:
         rel = os.path.relpath(p, start=data_dir)
         dst_dir = os.path.join("_quarantine", tag, os.path.dirname(rel))
         os.makedirs(dst_dir, exist_ok=True)
         try: shutil.move(p, os.path.join(dst_dir, os.path.basename(p)))
         except: pass
-AUTOTUNE = tf.data.AUTOTUNE
+    AUTOTUNE = tf.data.AUTOTUNE
 
-ds_train = tf.keras.utils.image_dataset_from_directory(
+    ds_train = tf.keras.utils.image_dataset_from_directory(
     data_dir,
     image_size=img_size,
     batch_size=batch_size,
@@ -173,9 +175,9 @@ ds_train = tf.keras.utils.image_dataset_from_directory(
     subset='training',
     seed=seed,
     label_mode='categorical'
-)
+    )
 
-ds_val = tf.keras.utils.image_dataset_from_directory(
+    ds_val = tf.keras.utils.image_dataset_from_directory(
     data_dir,
     image_size=img_size,
     batch_size=batch_size,
@@ -183,34 +185,34 @@ ds_val = tf.keras.utils.image_dataset_from_directory(
     subset='validation',
     seed=seed,
     label_mode='categorical'
-)
+    )
 
-data_augmentation = tf.keras.Sequential([
+    data_augmentation = tf.keras.Sequential([
     layers.RandomFlip("horizontal"),
     layers.RandomRotation(0.05),
     layers.RandomZoom(0.10),
     layers.RandomTranslation(0.1, 0.1),
     layers.RandomContrast(0.1),
-], name="augmentation")
+    ], name="augmentation")
 
 
-class PreprocessLayer(layers.Layer):
+    class PreprocessLayer(layers.Layer):
     def call(self, x): return preprocess_input(x)
 
-preprocess_layer = PreprocessLayer(name="mnetv2_preprocess")
+    preprocess_layer = PreprocessLayer(name="mnetv2_preprocess")
 
-ds_train = ds_train.shuffle(1000).prefetch(AUTOTUNE)
-ds_val   = ds_val.prefetch(AUTOTUNE)
+    ds_train = ds_train.shuffle(1000).prefetch(AUTOTUNE)
+    ds_val   = ds_val.prefetch(AUTOTUNE)
 
-num_classes = len(classes)
-print("num_classes:", num_classes)
+    num_classes = len(classes)
+    print("num_classes:", num_classes)
 
-base_fe = MobileNetV2(include_top=False, weights="imagenet", input_shape=img_size+(3,))
-fe_model = tf.keras.Sequential([preprocess_layer, base_fe, GlobalAveragePooling2D()], name="feature_extractor")
-fe_model.trainable = False
+    base_fe = MobileNetV2(include_top=False, weights="imagenet", input_shape=img_size+(3,))
+    fe_model = tf.keras.Sequential([preprocess_layer, base_fe, GlobalAveragePooling2D()], name="feature_extractor")
+    fe_model.trainable = False
 
-paths, labels, feats = [], [], []
-for batch_imgs, batch_lbls in tqdm(ds_train.unbatch().batch(64), total=math.ceil(sum(1 for _ in ds_train.unbatch())/64)):
+    paths, labels, feats = [], [], []
+    for batch_imgs, batch_lbls in tqdm(ds_train.unbatch().batch(64), total=math.ceil(sum(1 for _ in ds_train.unbatch())/64)):
     f = fe_model(batch_imgs, training=False).numpy()
     feats.append(f)
     labels.append(batch_lbls.numpy())
@@ -320,7 +322,7 @@ plt.tight_layout(); plt.show()
 paths_all = []
 labels_all = []
 
-val_files = []
+ val_files = []
 for c in classes:
     all_files = sorted([os.path.join(data_dir, c, f) for f in os.listdir(os.path.join(data_dir, c)) if pathlib.Path(f).suffix.lower() in {".jpg",".jpeg",".png",".bmp",".webp",".tif",".tiff"}])
     n = len(all_files)
