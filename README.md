@@ -86,12 +86,10 @@ from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout, Inpu
 from tensorflow.keras.optimizers import Adam
 from sklearn.metrics import classification_report, confusion_matrix
 
-# Reproducibility
 seed = 42
 random.seed(seed); np.random.seed(seed); tf.random.set_seed(seed)
 os.environ["PYTHONHASHSEED"] = str(seed)
 
-# Paths & config
 data_dir = "PlantVillage_resize_224"   # CHANGE if needed
 img_size = (224, 224)
 batch_size = 32
@@ -101,7 +99,6 @@ classes = sorted(classes)
 print("Classes:", classes)
 assert len(classes) > 1, "No class folders found."
 
-# Save mapping for later inference
 class_to_idx = {c:i for i,c in enumerate(classes)}
 idx_to_class = {i:c for c,i in class_to_idx.items()}
 with open("class_indices.json", "w") as f:
@@ -151,12 +148,10 @@ df_meta = pd.DataFrame(records)
 print(f"Scanned {len(df_meta)} images.")
 print(f"Non-image/Corrupt files: {len(bad_files)} | Tiny: {len(tiny_files)} | Odd ratio: {len(odd_ratio)}")
 
-# Save reports
 pd.DataFrame(bad_files, columns=["path","reason"]).to_csv("report_bad_files.csv", index=False)
 pd.DataFrame(tiny_files, columns=["path","size"]).to_csv("report_tiny_files.csv", index=False)
 pd.DataFrame(odd_ratio, columns=["path","size"]).to_csv("report_odd_ratio.csv", index=False)
 
-# Class counts
 cnt = df_meta['cls'].value_counts().sort_index()
 print("\nPer-class counts:\n", cnt)
 cnt.to_csv("report_class_counts.csv")
@@ -190,7 +185,6 @@ ds_val = tf.keras.utils.image_dataset_from_directory(
     label_mode='categorical'
 )
 
-# Data augmentation (kept realistic)
 data_augmentation = tf.keras.Sequential([
     layers.RandomFlip("horizontal"),
     layers.RandomRotation(0.05),
@@ -199,37 +193,32 @@ data_augmentation = tf.keras.Sequential([
     layers.RandomContrast(0.1),
 ], name="augmentation")
 
-# Wrap preprocess_input
+
 class PreprocessLayer(layers.Layer):
     def call(self, x): return preprocess_input(x)
 
 preprocess_layer = PreprocessLayer(name="mnetv2_preprocess")
 
-# Cache & prefetch
 ds_train = ds_train.shuffle(1000).prefetch(AUTOTUNE)
 ds_val   = ds_val.prefetch(AUTOTUNE)
 
 num_classes = len(classes)
 print("num_classes:", num_classes)
-# Build a feature extractor
+
 base_fe = MobileNetV2(include_top=False, weights="imagenet", input_shape=img_size+(3,))
 fe_model = tf.keras.Sequential([preprocess_layer, base_fe, GlobalAveragePooling2D()], name="feature_extractor")
 fe_model.trainable = False
 
-# Collect features class-wise
 paths, labels, feats = [], [], []
 for batch_imgs, batch_lbls in tqdm(ds_train.unbatch().batch(64), total=math.ceil(sum(1 for _ in ds_train.unbatch())/64)):
     f = fe_model(batch_imgs, training=False).numpy()
     feats.append(f)
     labels.append(batch_lbls.numpy())
-# Note: image paths are not carried by tf.data; build a parallel list from df_meta (approx) for reporting
+
 
 feats = np.vstack(feats)
 labels = np.vstack(labels)
 y_idx = labels.argmax(1)
-
-# Approximate path list from df_meta by sampling per class counts from ds_train cardinality
-# (Simpler: build a list from image_dataset_from_directory's file_paths attribute via a separate generator)
 train_list = tf.keras.utils.image_dataset_from_directory(
     data_dir, image_size=img_size, batch_size=1,
     validation_split=val_split, subset='training', seed=seed, label_mode='categorical'
@@ -237,10 +226,7 @@ train_list = tf.keras.utils.image_dataset_from_directory(
 
 file_paths = []
 for img, lab in train_list.unbatch().take(len(df_meta)):  # will end at training subset size
-    # Keras dataset keeps file_paths
     break
-# The public API doesn’t expose file_paths directly; create them ourselves:
-# Safer approach: rebuild training file list deterministically
 train_files = []
 for c in classes:
     all_files = sorted([os.path.join(data_dir, c, f) for f in os.listdir(os.path.join(data_dir, c)) if is_image(os.path.join(data_dir, c, f))])
@@ -253,7 +239,6 @@ for c in classes:
 
 paths = train_files[:feats.shape[0]]  # align lengths defensively
 
-# Compute per-class centroid & distances
 df_feats = pd.DataFrame({"path": paths, "y": y_idx})
 df_feats["cls"] = df_feats["y"].map(idx_to_class)
 
@@ -269,7 +254,6 @@ for i,(p,y) in enumerate(zip(paths, y_idx)):
         dists[i] = np.linalg.norm(feats[i] - centroids[y])
 df_feats["dist"] = dists
 
-# Flag top-K outliers per class
 K = 10  # change per your dataset size
 rows = []
 for cidx in range(num_classes):
@@ -318,17 +302,14 @@ for imgs, labs in ds_val.unbatch().batch(64):
 y_true = np.array(y_true); y_pred = np.array(y_pred); y_prob = np.array(y_prob)
 print("Validation accuracy:", (y_true==y_pred).mean())
 
-# Classification report
 rep = classification_report(y_true, y_pred, target_names=classes, digits=4, output_dict=True)
 pd.DataFrame(rep).transpose().to_csv("report_classification.csv")
 print("Saved report_classification.csv")
 
-# Confusion matrix
 cm = confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))
 pd.DataFrame(cm, index=classes, columns=classes).to_csv("report_confusion_matrix.csv")
 print("Saved report_confusion_matrix.csv")
 
-# Plot (quick view)
 plt.figure(figsize=(min(12, 0.6*num_classes), min(12, 0.6*num_classes)))
 plt.imshow(cm, interpolation='nearest')
 plt.title('Confusion Matrix')
@@ -338,7 +319,7 @@ plt.yticks(ticks=np.arange(num_classes), labels=classes)
 plt.tight_layout(); plt.show()
 paths_all = []
 labels_all = []
-# Recreate validation file list deterministically (same split logic as earlier)
+
 val_files = []
 for c in classes:
     all_files = sorted([os.path.join(data_dir, c, f) for f in os.listdir(os.path.join(data_dir, c)) if pathlib.Path(f).suffix.lower() in {".jpg",".jpeg",".png",".bmp",".webp",".tif",".tiff"}])
@@ -348,8 +329,6 @@ for c in classes:
     r = random.Random(seed)
     r.shuffle(all_files)
     val_files += all_files[train_n:]
-
-# Run inference over validation set with file paths
 def load_img(path):
     im = tf.keras.utils.load_img(path, target_size=img_size)
     arr = tf.keras.utils.img_to_array(im)
@@ -368,7 +347,6 @@ for p in tqdm(val_files):
     pred_rows.append({"path": p, "true_cls": true_cls, "pred_cls": pred_cls, "conf": conf})
 
 df_preds = pd.DataFrame(pred_rows)
-# Likely mismatches = wrong predictions with HIGH confidence (e.g., ≥ 0.90)
 candidates = df_preds[(df_preds.true_cls != df_preds.pred_cls) & (df_preds.conf >= 0.90)].sort_values("conf", ascending=False)
 candidates.to_csv("report_likely_label_mismatches.csv", index=False)
 print("Saved likely mismatches -> report_likely_label_mismatches.csv (manual review recommended)")
