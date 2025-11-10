@@ -226,3 +226,8 @@ Integrate with IoT-based smart farming systems for automatic monitoring.
 AI-based crop disease prediction provides a powerful and scalable solution to the challenges of manual disease detection.
 By using deep learning models trained on large datasets like PlantVillage, we can achieve accurate, fast, and cost-effective disease identification — contributing significantly to smart agriculture and food security.
 
+#output
+![Image](https://github.com/user-attachments/assets/90c976b8-e368-40cd-9a89-4b2effe378da)
+![Image](https://github.com/user-attachments/assets/1b2cf7e8-c80e-475c-b118-d1b869c3e2be)
+![Image](https://github.com/user-attachments/assets/eadfb4ed-ab02-409d-acd1-0879c24a7508)
+
